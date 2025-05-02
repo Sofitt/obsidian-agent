@@ -1,3 +1,4 @@
+process.env.TRANSFORMERS_NO_IMAGE = "1";
 const axios = require("axios");
 const fs = require("fs");
 const readline = require("readline");
@@ -7,13 +8,67 @@ const { loadContext, refreshContext } = require("./lib/vault.cjs");
 const { truncateHistory } = require("./lib/truncateHistory.cjs");
 const { askWithContext } = require("./lib/llm/askWithContext.cjs");
 const { askWithContextStream } = require("./lib/llm/askWithContextStream.cjs");
-const { MODEL } = require("./globals.cjs");
+const { MODEL, API_SHOW, API_RUN } = require("./globals.cjs");
 
-const API_URL = "http://localhost:11434/api/chat";
 const HISTORY_DIR = "./chat_rooms";
 const SYS_INSTRUCTIONS = system;
 
 const useContext = MODEL.stream ? askWithContextStream : askWithContext;
+
+async function ensureModelRunning(timeoutMs = 20000) {
+  // сначала проверим — активна ли модель
+  try {
+    const res = await axios.post(API_SHOW, { model: MODEL.name });
+    console.log("ensureModelRunning res", res?.data?.details);
+    if (
+      res.data?.details?.model_name === MODEL.name ||
+      MODEL.name.includes(res.data?.details.family)
+    )
+      return;
+  } catch (_) {
+    // continue — может ещё не готов
+  }
+
+  // запускаем модель вручную
+  console.log(`Запускаем модель ${MODEL.name} через Ollama...`);
+  try {
+    await axios.post(API_RUN, {
+      model: MODEL.name,
+      prompt: "ping",
+      stream: false,
+      options: { num_ctx: 2048 },
+    });
+    console.log("🚀 Модель запущена ping-запросом");
+  } catch (err) {
+    console.error(
+      "❌ Не удалось отправить ping для запуска модели:",
+      err.response?.data || err.message,
+    );
+  }
+
+  // ждём, пока она станет активной
+  const start = Date.now();
+  while (true) {
+    try {
+      const res = await axios.post(API_SHOW, { model: MODEL.name });
+      console.log("details", res.data?.details);
+      if (res.data?.details?.model_name === MODEL.name) {
+        console.log("Модель активна.");
+        return;
+      }
+    } catch (_) {
+      console.error("err", { data: _.data, status: _.status, response: _.response });
+    }
+
+    if (Date.now() - start > timeoutMs) {
+      console.error(`Ошибка: не удалось запустить модель ${MODEL.name}`);
+      process.exit(1);
+    }
+
+    process.stdout.write(".");
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 
 if (!fs.existsSync(HISTORY_DIR)) {
   fs.mkdirSync(HISTORY_DIR);
@@ -77,8 +132,10 @@ async function sendMessage() {
     }
 
     // ⚡ по умолчанию использовать векторный поиск
-    const answer = await useContext(trimmed);
-    console.log("ИИ:", answer, "\n");
+    const answer = await useContext(trimmed, roomName, rl);
+    if (!MODEL.stream) {
+      console.log("ИИ:", answer, "\n");
+    }
 
     messages.push({ role: "user", content: trimmed });
     messages.push({ role: "assistant", content: answer });
@@ -90,13 +147,15 @@ async function sendMessage() {
   });
 }
 
-rl.question("Введите название комнаты: ", (input) => {
-  roomName = input.trim() || "default";
-  loadHistory(roomName);
-  const context = loadContext(roomName);
-  messages.unshift({ role: "user", content: context });
-  console.log(
-    `\nКомната "${roomName}" активна.\n/exit - выход\n/switch room_name - смены комнаты\n`,
-  );
-  sendMessage();
+ensureModelRunning().then(() => {
+  rl.question("Введите название комнаты: ", (input) => {
+    roomName = input.trim() || "default";
+    loadHistory(roomName);
+    const context = loadContext(roomName);
+    messages.unshift({ role: "user", content: context });
+    console.log(
+      `\nКомната "${roomName}" активна.\n/exit - выход\n/switch room_name - смены комнаты\n`,
+    );
+    sendMessage();
+  });
 });

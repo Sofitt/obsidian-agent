@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11435:11434"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - OLLAMA_NUM_CTX=2048
+      - MODEL_NAME=qwen3:8b-q4_K_M
+    entrypoint: >
+      /bin/sh -c "
+        ollama pull $MODEL_NAME &&
+        nohup ollama run $MODEL_NAME --options '{\"num_ctx\": ${OLLAMA_NUM_CTX:-2048}}' >/dev/null 2>&1 &
+        exec ollama serve
+      "
+    runtime: nvidia
+    stdin_open: true
+    tty: true
+    volumes:
+      - C:/Users/YOU/.ollama:/root/.ollama
+
+  agent-windows:
+    build: .
+    volumes:
+      - C:/Users/YOU/Documents/Obsidian:/app/vault:ro # <-- укажи реальный путь
+      - ./chat_rooms:/app/chat_rooms
+      - ./context:/app/context
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    stdin_open: true
+    tty: true
+    command: ["bun", "agent.cjs"]
