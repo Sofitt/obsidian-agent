@@ -8,12 +8,33 @@ const { loadContext, refreshContext } = require("./lib/vault.cjs");
 const { truncateHistory } = require("./lib/truncateHistory.cjs");
 const { askWithContext } = require("./lib/llm/askWithContext.cjs");
 const { askWithContextStream } = require("./lib/llm/askWithContextStream.cjs");
-const { MODEL, API_SHOW, API_RUN } = require("./globals.cjs");
+const { MODEL, API_SHOW, API_RUN, BASE_URL } = require("./globals.cjs");
 
 const HISTORY_DIR = "./chat_rooms";
 const SYS_INSTRUCTIONS = system;
 
 const useContext = MODEL.stream ? askWithContextStream : askWithContext;
+
+let once = false;
+async function waitForOllamaReady(timeoutMs = 10000) {
+  const start = Date.now();
+  while (true) {
+    try {
+      await axios.get(`${BASE_URL}/api/tags`);
+      return;
+    } catch (_) {
+      !once && console.error(_);
+      once = true;
+    }
+
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("⛔ Ollama API не отвечает");
+    }
+
+    process.stdout.write(".");
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
 
 async function ensureModelRunning(timeoutMs = 20000) {
   // сначала проверим — активна ли модель
@@ -31,6 +52,7 @@ async function ensureModelRunning(timeoutMs = 20000) {
 
   // запускаем модель вручную
   console.log(`Запускаем модель ${MODEL.name} через Ollama...`);
+  await waitForOllamaReady();
   try {
     await axios.post(API_RUN, {
       model: MODEL.name,
@@ -57,7 +79,9 @@ async function ensureModelRunning(timeoutMs = 20000) {
         return;
       }
     } catch (_) {
-      console.error("err", { data: _.data, status: _.status, response: _.response });
+      if (!_) {
+      }
+      console.error("err", { data: _?.response.data || _, status: _.status });
     }
 
     if (Date.now() - start > timeoutMs) {

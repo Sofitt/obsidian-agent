@@ -1,7 +1,9 @@
 const models = {
+  // stream - способ отправки сообщений. true это побуквенно, false целое сообщение
   qwen: { name: "qwen3:8b-q4_K_M", stream: true },
   gemma: { name: "gemma3:4b-it-qat", stream: false },
 };
+// Укажи модель которую хочешь
 const MODEL = models.qwen;
 const OLLAMA_HOST = process.env.OLLAMA_HOST;
 

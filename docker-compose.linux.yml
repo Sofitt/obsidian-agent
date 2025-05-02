@@ -8,13 +8,6 @@ services:
       - "11435:11434"
     environment:
       - OLLAMA_NUM_CTX=2048
-      - MODEL_NAME=qwen3:8b-q4_K_M
-    entrypoint: >
-      /bin/sh -c "
-        ollama pull $MODEL_NAME &&
-        nohup ollama run $MODEL_NAME --options '{\"num_ctx\": ${OLLAMA_NUM_CTX:-2048}}' >/dev/null 2>&1 &
-        exec ollama serve
-      "
     runtime: nvidia
     deploy: {} # убираем default deploy behavior
     stdin_open: true
