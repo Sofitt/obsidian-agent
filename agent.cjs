@@ -79,9 +79,8 @@ async function ensureModelRunning(timeoutMs = 20000) {
         return;
       }
     } catch (_) {
-      if (!_) {
-      }
-      console.error("err", { data: _?.response.data || _, status: _.status });
+      if (!_) return;
+      console.error("err", { data: _.response.data, status: _.status });
     }
 
     if (Date.now() - start > timeoutMs) {
